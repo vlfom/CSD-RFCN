@@ -108,7 +108,7 @@ class _RFCN(nn.Module):
         consistency_rois = rois.clone()
 
         # if it is training phrase, then use ground trubut bboxes for refining
-        if self.training and int(semi_check):
+        if self.training and int(semi_check.sum().item()):
             roi_data = self.RCNN_proposal_target(rois, gt_boxes, num_boxes)
             rois, rois_label, rois_target, rois_inside_ws, rois_outside_ws = roi_data
 
@@ -141,7 +141,7 @@ class _RFCN(nn.Module):
         pooled_feat_loc = self.pooling(pooled_feat_loc)
         bbox_pred = pooled_feat_loc.squeeze()
 
-        if self.training and not self.class_agnostic and int(semi_check):
+        if self.training and not self.class_agnostic and int(semi_check.sum()):
             # select the corresponding columns according to roi labels
             bbox_pred_view = bbox_pred.view(bbox_pred.size(0), int(bbox_pred.size(1) / 4), 4)
             bbox_pred_select = torch.gather(bbox_pred_view, 1,
@@ -153,7 +153,7 @@ class _RFCN(nn.Module):
         RCNN_loss_cls = Variable(torch.cuda.FloatTensor([0]))
         RCNN_loss_bbox = Variable(torch.cuda.FloatTensor([0]))
 
-        if self.training and int(semi_check):
+        if self.training and int(semi_check.sum()):
             loss_func = self.ohem_detect_loss if cfg.TRAIN.OHEM else self.detect_loss
             RCNN_loss_cls, RCNN_loss_bbox = loss_func(cls_score, rois_label, bbox_pred, rois_target, rois_inside_ws, rois_outside_ws)
 

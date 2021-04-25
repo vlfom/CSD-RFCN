@@ -7,7 +7,7 @@ export CUDA_PATH=/usr/local/cuda/
 python setup.py build_ext --inplace
 rm -rf build
 
-CUDA_ARCH="-gencode arch=compute_52,code=sm_52"
+CUDA_ARCH="-gencode arch=compute_70,code=sm_70"
 
 # clean build file
 rm model/nms/src/*.o

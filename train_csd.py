@@ -58,14 +58,14 @@ def parse_args():
                         type=str)
     parser.add_argument('--nw', dest='num_workers',
                         help='number of worker to load data',
-                        default=4, type=int)
+                        default=1, type=int)
     parser.add_argument('--cuda', dest='cuda', default=True,
                         help='whether use CUDA',
                         action='store_true')
     parser.add_argument('--ls', dest='large_scale',
                         help='whether use large imag scale',
                         action='store_true')
-    parser.add_argument('--mGPUs', dest='mGPUs', default=True,
+    parser.add_argument('--mGPUs', dest='mGPUs', default=False,
                         help='whether use multiple GPUs',
                         action='store_true')
     parser.add_argument('--ohem', dest='ohem',
@@ -73,7 +73,7 @@ def parse_args():
                         action='store_true')
     parser.add_argument('--bs', dest='batch_size',
                         help='batch_size',
-                        default=4, type=int)
+                        default=2, type=int)
     parser.add_argument('--cag', dest='class_agnostic',
                         help='whether perform class_agnostic bbox regression',
                         action='store_true')
@@ -440,7 +440,6 @@ if __name__ == '__main__':
 
             # print(im_data.size(), unlabel_im_data.size())
             model.zero_grad()
-            # print(semi_check)
             rois, rpn_loss_cls, rpn_loss_box, \
             RCNN_loss_cls, RCNN_loss_bbox, \
             rois_label, consistency_loss = model(im_data, im_info, gt_boxes, num_boxes, semi_check, training=True)

@@ -63,20 +63,20 @@ __C.TRAIN.SUMMARY_INTERVAL = 180
 
 # Scale to use during training (can list multiple scales)
 # The scale is the pixel size of an image's shortest side
-__C.TRAIN.SCALES = (400, 500, 600, 700, 800)
+__C.TRAIN.SCALES = (200,)
 
 # Max pixel size of the longest side of a scaled input image
-__C.TRAIN.MAX_SIZE = 1000
+__C.TRAIN.MAX_SIZE = 200
 
 # Trim size for input images to create minibatch
-__C.TRAIN.TRIM_HEIGHT = 600
-__C.TRAIN.TRIM_WIDTH = 600
+__C.TRAIN.TRIM_HEIGHT = 100
+__C.TRAIN.TRIM_WIDTH = 100
 
 # Images to use per minibatch
 __C.TRAIN.IMS_PER_BATCH = 1
 
 # Minibatch size (number of regions of interest [ROIs])
-__C.TRAIN.BATCH_SIZE = 128
+__C.TRAIN.BATCH_SIZE = 16
 
 # Fraction of minibatch that is labeled foreground (i.e. class > 0)
 __C.TRAIN.FG_FRACTION = 0.25
@@ -139,7 +139,7 @@ __C.TRAIN.RPN_CLOBBER_POSITIVES = False
 # Max number of foreground examples
 __C.TRAIN.RPN_FG_FRACTION = 0.5
 # Total number of examples
-__C.TRAIN.RPN_BATCHSIZE = 256
+__C.TRAIN.RPN_BATCHSIZE = 16
 # NMS threshold used on RPN proposals
 __C.TRAIN.RPN_NMS_THRESH = 0.7
 # Number of top scoring boxes to keep before apply NMS to RPN proposals
@@ -171,7 +171,7 @@ __C.TEST = edict()
 __C.TEST.SCALES = (600,)
 
 # Max pixel size of the longest side of a scaled input image
-__C.TEST.MAX_SIZE = 1000
+__C.TEST.MAX_SIZE = 600
 
 # Overlap threshold used for non-maximum suppression (suppress boxes with
 # IoU >= this threshold)
@@ -269,7 +269,7 @@ __C.EPS = 1e-14
 __C.ROOT_DIR = osp.abspath(osp.join(osp.dirname(__file__), '..', '..', '..'))
 
 # Data directory
-__C.DATA_DIR = '/home/soo/data'
+x
 
 # Name (or path to) the matlab executable
 __C.MATLAB = 'matlab'
