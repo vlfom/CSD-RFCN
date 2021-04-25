@@ -2,6 +2,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+# !
+# ! This file is the same as the original one, only it uses `rfcn_consistency` to import RFCN
+# !
+
 import math
 
 import torch

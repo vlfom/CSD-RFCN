@@ -11,11 +11,11 @@ from model.utils.config import cfg
 from model.utils.net_utils import _smooth_l1_loss
 
 def flip(x, dim):
-    xsize = x.size()
-    dim = x.dim() + dim if dim < 0 else dim
-    x = x.view(-1, *xsize[dim:])
-    x = x.view(x.size(0), x.size(1), -1)[:, getattr(torch.arange(x.size(1)-1,
-                      -1, -1), ('cpu','cuda')[x.is_cuda])().long(), :]
+    # ! somehow this apparently actually flips the images, but I have non idea how...
+    xsize = x.size()  # e.g. (4, 3, 512, 512)
+    dim = x.dim() + dim if dim < 0 else dim  # e.g. 3
+    x = x.view(-1, *xsize[dim:])  # e.g. x.view(-1, 512)
+    x = x.view(x.size(0), x.size(1), -1)[:, getattr(torch.arange(x.size(1) - 1, -1, -1), ('cpu', 'cuda')[x.is_cuda])().long(), :]
     return x.view(xsize)
 
 class _RFCN(nn.Module):
@@ -93,10 +93,11 @@ class _RFCN(nn.Module):
         semi_check = semi_check.data
         self.batch_size = im_data.size(0)
 
+        #! seems like the actual images are flipped here
         im_data_flip = im_data.clone()
         im_data_flip = flip(im_data_flip,3)
 
-
+        #! the features are extracted for both original and flipped images
         # feed image data to base model to obtain base feature map
         base_feat = self.RCNN_base(im_data)
         base_feat_flip = self.RCNN_base(im_data_flip)
@@ -104,7 +105,7 @@ class _RFCN(nn.Module):
         # feed base feature map tp RPN to obtain rois
         rois, rpn_loss_cls, rpn_loss_bbox = self.RCNN_rpn(base_feat, im_info, gt_boxes, num_boxes)
 
-
+        #! clone RoIs (why?)
         consistency_rois = rois.clone()
 
         # if it is training phrase, then use ground trubut bboxes for refining
@@ -141,6 +142,9 @@ class _RFCN(nn.Module):
         pooled_feat_loc = self.pooling(pooled_feat_loc)
         bbox_pred = pooled_feat_loc.squeeze()
 
+
+        #! still supervised part
+        #! the semi_check part is needed to make sure we got some labeled samples in the batch at all - otherwise this part is not needed, indeed
         if self.training and not self.class_agnostic and int(semi_check.sum()):
             # select the corresponding columns according to roi labels
             bbox_pred_view = bbox_pred.view(bbox_pred.size(0), int(bbox_pred.size(1) / 4), 4)
@@ -161,28 +165,32 @@ class _RFCN(nn.Module):
         bbox_pred = bbox_pred.view(batch_size, rois.size(1), -1)
 
 
-
+        #! consistency-related code starts here
 
         # # unlabeled loss
 
+        #! extract FCN features from original image and obtain per_bbox_probabilities
         consistency_feat = self.RCNN_cls_base(base_feat)
         consistency_feat_cls = self.RCNN_psroi_pool_cls(consistency_feat, consistency_rois.view(-1, 5))
         consistency_cls_score = self.pooling(consistency_feat_cls)
         consistency_cls_score = consistency_cls_score.squeeze()
         consistency_cls_prob = F.softmax(consistency_cls_score, dim=1)
 
+        #! extract FCN features from flipped image and obtain per_bbox_probabilities
         base_feat_flip = self.RCNN_conv_new(base_feat_flip)
         consistency_feat_flip = self.RCNN_cls_base(base_feat_flip)
 
+        #! -- flipping the RoI bboxes (simple subtraction)
         consistency_rois_flip = consistency_rois.clone()
-
         consistency_rois_flip[:, :, 1] = im_info[0][1] - (consistency_rois.clone()[:, :, 3] + 1)
         consistency_rois_flip[:,:,3] = im_info[0][1] - (consistency_rois.clone()[:,:,1] + 1 )
 
+        #! -- obtain per_bbox_probabilities
         consistency_feat_cls_flip = self.RCNN_psroi_pool_cls(consistency_feat_flip, consistency_rois_flip.view(-1, 5))
         consistency_cls_score_flip = self.pooling(consistency_feat_cls_flip)
         consistency_cls_score_flip = consistency_cls_score_flip.squeeze()
         consistency_cls_prob_flip = F.softmax(consistency_cls_score_flip, dim=1)
+
 
         consistency_bbox_feat = self.RCNN_bbox_base(base_feat)
         consistency_bbox_feat_flip = self.RCNN_bbox_base(base_feat_flip)
@@ -197,12 +205,12 @@ class _RFCN(nn.Module):
         consistency_bbox_pred_view_flip = consistency_bbox_pred_flip.view(consistency_bbox_pred_flip.size(0),
                                                                 int(consistency_bbox_pred_flip.size(1) / 4), 4)
 
+        #! last channel is the prediction of delta_x, as mentioned in paper it should get negative sign; mul/div by 1000 is probably for higher precision?
         consistency_bbox_pred_view_flip = torch.mul(consistency_bbox_pred_view_flip, 1000)
         consistency_bbox_pred_view_flip[:, :, 0] = torch.mul(consistency_bbox_pred_view_flip[:, :, 0], -1)
         consistency_bbox_pred_view_flip = torch.div(consistency_bbox_pred_view_flip, 1000)
 
-        # consistency_loc = torch.mean(torch.pow(bbox_pred_view_unflip - bbox_pred_view_flip, exponent=2))
-
+        #! discard bboxes that were predicted as background on original bboxes (background_prob > each_prob)
         conf_class = consistency_cls_prob[:,1:].clone()
         background_score = consistency_cls_prob[:,0].clone()
         each_val, each_index = torch.max(conf_class,dim=1)
@@ -219,6 +227,7 @@ class _RFCN(nn.Module):
             conf_mask_sample_flip = consistency_cls_prob_flip.clone()
             conf_sample_flip = conf_mask_sample_flip[mask_conf_index].view(-1, 21)
 
+            #! calculate JSD consistency classification loss
             conf_sampled = conf_sample + 1e-7
             conf_sampled_flip = conf_sample_flip + 1e-7
             consistency_conf_loss_a = conf_consistency_criterion(conf_sampled.log(), conf_sampled_flip.detach()).sum(
@@ -227,6 +236,7 @@ class _RFCN(nn.Module):
                 -1).mean()
             consistency_cls = torch.div(consistency_conf_loss_a + consistency_conf_loss_b, 2)
 
+            #! calculate L2 consistency localization loss
             mask_loc_index = mask_val.unsqueeze(1).unsqueeze(2).expand_as(consistency_bbox_pred_view)
             loc_mask_sample = consistency_bbox_pred_view.clone()
             loc_sample = loc_mask_sample[mask_loc_index].view(-1, 4)

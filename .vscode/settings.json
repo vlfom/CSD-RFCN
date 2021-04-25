@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "/Users/vlfom/miniconda3/envs/common/bin/python",
+    "python.envFile": "${workspaceFolder}/.env"
+}

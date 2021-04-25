@@ -174,6 +174,7 @@ if __name__ == '__main__':
         from model.faster_rcnn.resnet import resnet
     elif args.arch == 'rfcn':
         ########## consistency loss !!!!!!!!!!!!!!!!!!  #########
+        # ! resnet is overriden here. Why?
         from model.rfcn.resnet_atrous_consistency import resnet
         # from model.rfcn.resnet_atrous import resnet
     elif args.arch == 'couplenet':
@@ -196,6 +197,7 @@ if __name__ == '__main__':
         args.imdbval_name = "voc_2007_test"
         args.set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
     elif args.dataset == "pascal_voc_0712_semi":
+        # ! Definition of the dataset
         args.imdb_name = "voc_2007_trainval"
         args.imdb_name_unlabel = "voc_2012_trainval" #%+coco_2014_train+coco_2014_val
         args.imdbval_name = "voc_2007_test"
@@ -232,6 +234,8 @@ if __name__ == '__main__':
 
     # train set
     # -- Note: Use validation set and disable the flipped to enable faster loading.
+    # ! Generating datasets: combined_roidb flips bboxes and puts them after original ones (see combined_roidb)
+    # ! flipping bboxes is simple - just modifying the coords;actual flipping of images happens later inside `rfcn_consistency`
     cfg.TRAIN.USE_FLIPPED = True
     cfg.USE_GPU_NMS = args.cuda
     imdb, roidb, ratio_list, ratio_index = combined_roidb(args.imdb_name)
@@ -246,16 +250,19 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # ! 1 supervised and 3 unsupervised per batch
     supervised_batch_size = 1
     unsupervised_batch_size = args.batch_size - supervised_batch_size
 
     sampler_batch = sampler(train_size, supervised_batch_size)
     dataset = roibatchLoader(roidb, ratio_list, ratio_index, supervised_batch_size, imdb.num_classes, training=True)
+    # ! Dataloaders definition
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=supervised_batch_size, sampler=sampler_batch, num_workers=args.num_workers, drop_last=True)
 
 
     unlabel_sampler_batch = sampler(unlabel_train_size, unsupervised_batch_size)
     unlabel_dataset = roibatchLoader(unlabel_roidb, unlabel_ratio_list, unlabel_ratio_index, unsupervised_batch_size, imdb.num_classes, training=True)
+    # ! Dataloaders definition
     unlabel_dataloader = torch.utils.data.DataLoader(unlabel_dataset, batch_size=unsupervised_batch_size, sampler=unlabel_sampler_batch, num_workers=args.num_workers, drop_last=True)
 
 
@@ -265,6 +272,7 @@ if __name__ == '__main__':
     im_info = torch.FloatTensor(1)
     num_boxes = torch.LongTensor(1)
     gt_boxes = torch.FloatTensor(1)
+    # ! Semi_check is an indicator per each item in batch whether it's labeled or not (1 - labeled, 0 - not), e.g. [0, 0, 0, 1]
     semi_check = torch.ByteTensor(1)
 
     # ship to cuda
@@ -311,6 +319,7 @@ if __name__ == '__main__':
     if args.net == 'vgg16':
         model = vgg16(imdb.classes, pretrained=True, class_agnostic=args.class_agnostic)
     elif args.net == 'res101':
+        # ! Default one, remember, resnet is overwritten (see above)
         model = resnet(imdb.classes, 101, pretrained=True, class_agnostic=args.class_agnostic)
     elif args.net == 'res50':
         model = resnet(imdb.classes, 50, pretrained=True, class_agnostic=args.class_agnostic)
@@ -368,9 +377,7 @@ if __name__ == '__main__':
         model.cuda()
 
 
-    # supervised_batch_size = 1
-    # unsupervised_batch_size = args.batch_size - supervised_batch_size
-    #
+    # ! epochs for labeled and unlabeled data have different duration, as they mention in paper
     sup_iters_per_epoch = int(train_size / supervised_batch_size)
     unsuper_iters_per_epoch = int(unlabel_train_size / unsupervised_batch_size)
 
@@ -391,6 +398,8 @@ if __name__ == '__main__':
         data_iter = iter(dataloader)
         unlabel_data_iter = iter(unlabel_dataloader)
         for step in range(sup_iters_per_epoch):
+            # ! this is mostly original code; try-catch is to prevent some bugs from old pytorch
+
             try:
                 sup_data = next(data_iter)
             except StopIteration:
@@ -410,6 +419,7 @@ if __name__ == '__main__':
             num_boxes.data.resize_(sup_data[3].size()).copy_(sup_data[3])
             semi_check.data.resize_(sup_data[4].size()).copy_(sup_data[4])
 
+            # ! [2] are GT bboxes, [3] are their number, both should not exist - "remove them"
             upsup_data[2] = torch.zeros(upsup_data[2].size())
             upsup_data[3] = torch.zeros(upsup_data[3].size())
 
@@ -419,6 +429,7 @@ if __name__ == '__main__':
             unlabel_num_boxes.data.resize_(upsup_data[3].size()).copy_(upsup_data[3])
             unlabel_semi_check.data.resize_(upsup_data[4].size()).copy_(upsup_data[4])
 
+            # ! looks like here unlabeled images get resized to labeled images (see line 436, first in loop). Why?
             unlabel_im_data_numpy = unlabel_im_data.data.cpu().numpy()
             unlabel_patch_zeros = np.zeros([unsupervised_batch_size, 3, im_data.size()[2], im_data.size()[3]])
 
@@ -431,6 +442,7 @@ if __name__ == '__main__':
             unlabel_im_data = unlabel_im_data.cuda()
             unlabel_im_data = Variable(unlabel_im_data)
 
+            # ! labeled and unlabeled data are simply concatenated
             im_data = torch.cat((im_data,unlabel_im_data),dim=0)
             im_info = torch.cat((im_info,unlabel_im_info),dim=0)
             gt_boxes = torch.cat((gt_boxes,unlabel_gt_boxes),dim=0)
@@ -444,12 +456,13 @@ if __name__ == '__main__':
             RCNN_loss_cls, RCNN_loss_bbox, \
             rois_label, consistency_loss = model(im_data, im_info, gt_boxes, num_boxes, semi_check, training=True)
 
+            # ! consistently loss importance is progressively updated
             ramp_weight = rampweight(ramp_iteration)
             consistency_loss = torch.mul(consistency_loss,ramp_weight)
 
             ramp_iteration += 1
 
-
+            # ! in original impl it's .mean()s, they replace with .sum(); note - consistency loss still uses "mean()"; maybe that's adjusted in ramp_weight?
             loss = rpn_loss_cls.sum() + rpn_loss_box.sum() \
                    + RCNN_loss_cls.sum() + RCNN_loss_bbox.sum() + consistency_loss.mean() #+ semi_rpn_loss_bbox.mean()
             loss_temp += loss.data[0]
